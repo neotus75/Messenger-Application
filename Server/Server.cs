@@ -22,15 +22,47 @@ namespace Messenger
         LOGOUT,
     }
 
+    enum CurrentState
+    {
+        CONNECTED,
+        DISCONNECTED,
+        AWAY
+    }
+
     class Chatter
     {
         public Chatter() { }
+        public string ChatterId { get; set; }
+        public string ChatterName { get; set; }
         public Location Location { get; set; }
-        public bool IsConnected { get; set; }
+        public CurrentState CurrentState { get; set; }
+        public Socket ChatterSocket { get; set; }
+        public const int BufferSize = 1024;
+        public byte[] Buffer = new byte[BufferSize];
     }
 
     class ChatRoom
     {
+        public ChatRoom()
+        { 
+            ChatRoomId++;
+            Chatters = new List<Chatter>();
+        }
+
+        public void EnterRoom(Chatter chatter)
+        {
+            Chatters.Add(chatter);
+        }
+        
+        public void ExitRoom(Chatter chatter)
+        {
+            Chatters.Remove(chatter);
+        }
+
+        public Location Location { get; set; }
+        public static int ChatRoomId { get; private set; }
+        public List<Chatter> Chatters { get; set; }
+        public int NumberOfChatters() => Chatters.Count;
         
     }
 
@@ -38,20 +70,25 @@ namespace Messenger
         private Socket _serverSocket; 
         private List<Socket> _clientSocketList; 
         private ManualResetEvent _manualResetEvent = new ManualResetEvent(false);
+        private List<ChatRoom> _chatRoomList;
+        private ChatRoom _lobby;
 
         public Server()
         {
             _serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             _serverSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
             _clientSocketList = new List<Socket>();
+            _chatRoomList = new List<ChatRoom>();
+            _lobby = new ChatRoom() { Location = Location.LOBBY, Chatters = new List<Chatter>() };
         }
 
         public void Start(int port, int backlog = 1000)
         {
+            _chatRoomList.Add(_lobby);
             _serverSocket.Bind(new IPEndPoint(IPAddress.Any, port));
             _serverSocket.Listen(backlog);
-
-            Console.WriteLine($"[{GetNumberConnected()}] Waiting for a connection...");
+           
+            Console.WriteLine($"[{_lobby.NumberOfChatters()}] Waiting for a connection...");
 
             while(true)
             {
@@ -61,35 +98,34 @@ namespace Messenger
                 _manualResetEvent.WaitOne();
             }
         }
-        private int GetNumberConnected()
-        {
-            return (_clientSocketList != null) ? _clientSocketList.Count : 0;
-        }
+        
+        // user connection go to "LOBBY" at first connection
         private void OnAccept(IAsyncResult asyncResult)
         {
             _manualResetEvent.Set();
 
-            var state = new State();
+            var chatter = new Chatter();
+
             var serverSocket = (Socket) asyncResult.AsyncState;
-            var clientSocket = serverSocket.EndAccept(asyncResult);
+            chatter.ChatterSocket = serverSocket.EndAccept(asyncResult);
 
-            state.Socket = clientSocket;
+            
+            chatter.ChatterSocket.Send(Encoding.UTF8.GetBytes($"Greeting from SERVER [{serverSocket.LocalEndPoint}]\r\n"));
 
-            // greets the client at connection
-            clientSocket.Send(Encoding.UTF8.GetBytes($"Greeting from SERVER [{serverSocket.LocalEndPoint}]\r\n"));
+            _lobby.EnterRoom(chatter);
 
-            // add client socket to the socket list as it gets connected.
-            _clientSocketList.Add(clientSocket);
+            Console.WriteLine($"A client connected from {chatter.ChatterSocket.RemoteEndPoint.ToString()}\r\n");
+            Console.WriteLine($"[{_lobby.NumberOfChatters()}] Waiting for a connection...");
 
             // notify all the clients of new comer.
-            Broadcast(clientSocket, $"[{GetNumberConnected()}] A client connected from {clientSocket.RemoteEndPoint.ToString()}\r\n");
+            Broadcast(chatter, $"A client connected from {chatter.ChatterSocket.RemoteEndPoint.ToString()}\r\n");
             
-            clientSocket.BeginReceive(state.Buffer, 
+            chatter.ChatterSocket.BeginReceive(chatter.Buffer, 
             0, 
             State.BufferSize, 
             SocketFlags.None, 
             new AsyncCallback(OnReceived), 
-            state);
+            chatter);
         }
 
         private void OnReceived(IAsyncResult asyncResult)
@@ -98,27 +134,31 @@ namespace Messenger
 
             try
             {
-                var state = (State) asyncResult.AsyncState;
-                var clientSocket = state.Socket;
-                var read = clientSocket.EndReceive(asyncResult);
+                //var state = (State) asyncResult.AsyncState;
+                var chatter = (Chatter)asyncResult.AsyncState;
+
+                //var clientSocket = state.Socket;
+                var chatterSocket = chatter.ChatterSocket;
+
+                var read = chatterSocket.EndReceive(asyncResult);
                 
                 if (read > 0)
                 {
-                    stringbuilder.Append(Encoding.UTF8.GetString(state.Buffer, 0, read));
+                    stringbuilder.Append(Encoding.UTF8.GetString(chatter.Buffer, 0, read));
 
-                    Broadcast(clientSocket, stringbuilder.ToString());    
+                    Broadcast(chatter, stringbuilder.ToString());
 
-                    clientSocket.BeginReceive(state.Buffer, 
+                    chatterSocket.BeginReceive(chatter.Buffer, 
                     0, 
                     State.BufferSize, 
                     SocketFlags.None, 
                     new AsyncCallback(OnReceived), 
-                    state);
+                    chatter);
                 }
                 else 
                 {
-                    Broadcast(clientSocket, $"\r\n[{GetNumberConnected() - 1}] {clientSocket.RemoteEndPoint} left the room...\n\r");       
-                    _clientSocketList.Remove(clientSocket);
+                    Broadcast(chatter, $"{chatter.ChatterSocket.RemoteEndPoint} left the room...\n\r");
+                    _lobby.ExitRoom(chatter);
                 }
               
             } catch (SocketException e) {
@@ -128,28 +168,32 @@ namespace Messenger
 
         private void OnSent(IAsyncResult asyncResult)
         {
-            var socket = (Socket)asyncResult.AsyncState;
-            var sent = socket.EndSend(asyncResult);
-            Trace.WriteLine($"{sent} byte(s) send to {socket.RemoteEndPoint.ToString()}");
+            var chatter = (Chatter)asyncResult.AsyncState;
+            var chatterSocket = chatter.ChatterSocket;
+            var sent = chatterSocket.EndSend(asyncResult);
+            Trace.WriteLine($"{sent} byte(s) send to {chatterSocket.RemoteEndPoint.ToString()}");
         }
 
-        private  void Broadcast(Socket currentSocket, string message)
+        private  void Broadcast(Chatter currentChatter, string message)
         {
             try
             {
-                foreach (var connectedSocket in _clientSocketList.Where(s => s.Connected == true))
+                foreach (var room in _chatRoomList)
                 {
-                    if (connectedSocket != currentSocket)
+                    foreach(var chatter in room.Chatters.Where(s => s.ChatterSocket.Connected == true))
                     {
-                        connectedSocket.BeginSend(Encoding.UTF8.GetBytes(message), 
-                        0, 
-                        message.Length, 
-                        SocketFlags.None, 
-                        new AsyncCallback(OnSent), 
-                        connectedSocket);
+                        if (chatter != currentChatter)
+                        {
+                            chatter.ChatterSocket.BeginSend(Encoding.UTF8.GetBytes(message),
+                            0,
+                            message.Length,
+                            SocketFlags.None,
+                            new AsyncCallback(OnSent),
+                            chatter);
+                        }
                     }
                 }
-            } 
+            }
             catch (Exception ex)
             {
                 Console.WriteLine($"An error occurred while sending messages to clients (message: {ex.Message})");
