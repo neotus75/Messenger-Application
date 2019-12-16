@@ -33,6 +33,7 @@ namespace Client
         public void OnConnected(IAsyncResult ar)
         {
             var clientSocket = (Socket) ar.AsyncState;
+            clientSocket.Send(Encoding.UTF8.GetBytes("hellow from client"));
 
         }
     }
@@ -41,7 +42,9 @@ namespace Client
 
         static void Main(string[] args)
         {
-            Console.WriteLine("Hello World!");
+            Client client = new Client();
+            client.Connect("127.0.0.1", 56675);
+
         }
     }
 }

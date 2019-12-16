@@ -63,13 +63,25 @@ namespace Messenger
 
             // notify all the clients of new comer.
             Broadcast(chatter, $"A client connected from {chatter.ChatterSocket.RemoteEndPoint.ToString()}\r\n");
-            
-            chatter.ChatterSocket.BeginReceive(chatter.Buffer, 
-            0, 
-            Chatter.BufferSize, 
-            SocketFlags.None, 
-            new AsyncCallback(OnReceived), 
-            chatter);
+            try 
+            {
+                chatter.ChatterSocket.BeginReceive(chatter.Buffer, 
+                0, 
+                Chatter.BufferSize, 
+                SocketFlags.None, 
+                new AsyncCallback(OnReceived), 
+                chatter);
+            } 
+            catch (Exception se)
+            {
+                if (_lobby.Chatters.Count != 0)
+                {
+                    chatter.ChatterSocket.Shutdown(SocketShutdown.Both);
+                    _lobby.ExitRoom(chatter);
+
+                }
+                Console.WriteLine(se.Message);
+            }
         }
 
         private void OnReceived(IAsyncResult asyncResult)
