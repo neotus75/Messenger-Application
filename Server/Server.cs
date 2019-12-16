@@ -6,66 +6,10 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Shared;
 
 namespace Messenger
 {
-    enum Location
-    {
-        LOBBY, 
-        CHATROOM
-    }
-    enum Control
-    {
-        ENTER, 
-        LEAVE,
-        LOGGIN,
-        LOGOUT,
-    }
-
-    enum CurrentState
-    {
-        CONNECTED,
-        DISCONNECTED,
-        AWAY
-    }
-
-    class Chatter
-    {
-        public Chatter() { }
-        public string ChatterId { get; set; }
-        public string ChatterName { get; set; }
-        public Location Location { get; set; }
-        public CurrentState CurrentState { get; set; }
-        public Socket ChatterSocket { get; set; }
-        public const int BufferSize = 1024;
-        public byte[] Buffer = new byte[BufferSize];
-    }
-
-    class ChatRoom
-    {
-        public ChatRoom()
-        { 
-            ChatRoomId++;
-            Chatters = new List<Chatter>();
-        }
-
-        public void EnterRoom(Chatter chatter)
-        {
-            Chatters.Add(chatter);
-        }
-        
-        public void ExitRoom(Chatter chatter)
-        {
-            Chatters.Remove(chatter);
-        }
-
-        public Location Location { get; set; }
-        public static int ChatRoomId { get; private set; }
-        public List<Chatter> Chatters { get; set; }
-        public int NumberOfChatters() => Chatters.Count;
-        
-    }
-
     class Server {
         private Socket _serverSocket; 
         private List<Socket> _clientSocketList; 
@@ -122,7 +66,7 @@ namespace Messenger
             
             chatter.ChatterSocket.BeginReceive(chatter.Buffer, 
             0, 
-            State.BufferSize, 
+            Chatter.BufferSize, 
             SocketFlags.None, 
             new AsyncCallback(OnReceived), 
             chatter);
@@ -150,7 +94,7 @@ namespace Messenger
 
                     chatterSocket.BeginReceive(chatter.Buffer, 
                     0, 
-                    State.BufferSize, 
+                    Chatter.BufferSize, 
                     SocketFlags.None, 
                     new AsyncCallback(OnReceived), 
                     chatter);
