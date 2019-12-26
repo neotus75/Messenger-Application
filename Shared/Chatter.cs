@@ -26,7 +26,13 @@ namespace Shared
 
     class Chatter
     {
-        public Chatter() { }
+        public Chatter() {
+        }
+        public Chatter(string chatterId, string chatterName)
+        {
+            ChatterId = chatterId;
+            ChatterName = chatterName;
+        }
         public string ChatterId { get; set; }
         public string ChatterName { get; set; }
         public Location Location { get; set; }

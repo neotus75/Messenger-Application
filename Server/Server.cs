@@ -32,7 +32,7 @@ namespace Messenger
             _serverSocket.Bind(new IPEndPoint(IPAddress.Any, port));
             _serverSocket.Listen(backlog);
            
-            Console.WriteLine($"[{_lobby.NumberOfChatters()}] Waiting for a connection...");
+            Console.WriteLine($"[{_lobby.NumberOfChatters()}] Waiting for a connection on [{_serverSocket.LocalEndPoint.ToString()}]...");
 
             while(true)
             {
@@ -115,6 +115,7 @@ namespace Messenger
                 {
                     Broadcast(chatter, $"{chatter.ChatterSocket.RemoteEndPoint} left the room...\n\r");
                     _lobby.ExitRoom(chatter);
+                    Console.WriteLine($"Client {chatter} left the room...");
                 }
               
             } catch (SocketException e) {
